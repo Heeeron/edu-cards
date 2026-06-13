@@ -74,6 +74,25 @@
   .expbody{padding:11px 13px;font-size:14px;line-height:1.75;white-space:pre-wrap;color:#cdd7ee;}
   .hint{margin-top:auto;color:var(--sub);font-size:12px;text-align:center;padding-top:12px;}
   .box-badge{position:absolute;top:14px;right:16px;font-size:11px;color:var(--sub);}
+  /* 阅读模式 */
+  .reader{display:flex;flex-direction:column;gap:14px;}
+  .readhead{position:sticky;top:0;z-index:5;background:#141b2e;padding:8px 2px;
+    font-size:13px;color:var(--sub);border-bottom:1px solid var(--line);margin-bottom:2px;}
+  .ritem{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
+    box-shadow:0 4px 14px rgba(0,0,0,.2);scroll-margin-top:54px;}
+  .ritem.flash{animation:flash 1.4s ease;}
+  @keyframes flash{0%,40%{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc);}100%{}}
+  .ritem h3{margin:0 0 10px;font-size:17px;line-height:1.5;font-weight:700;color:var(--txt);}
+  .ritem h3 .rnum{color:var(--acc);margin-right:6px;}
+  .ritem .rcat{display:inline-block;font-size:11px;color:var(--acc);background:rgba(91,140,255,.12);
+    border-radius:20px;padding:2px 10px;margin-bottom:10px;}
+  .ritem .ra{font-size:15.5px;line-height:1.85;white-space:pre-wrap;color:#e4ebfa;}
+  .ritem .rexph{margin:12px 0 4px;font-size:13px;color:var(--acc);font-weight:600;}
+  .ritem .expbody{padding:10px 12px;background:rgba(91,140,255,.08);border-radius:8px;border:1px solid var(--line);}
+  .totop{position:fixed;right:16px;bottom:18px;z-index:30;width:44px;height:44px;border-radius:50%;
+    background:var(--acc);color:#fff;border:none;font-size:20px;box-shadow:0 6px 18px rgba(0,0,0,.4);
+    cursor:pointer;display:none;}
+  .totop.show{display:block;}
   /* grade buttons */
   .grade{display:flex;gap:8px;}
   .grade button{flex:1;padding:14px;font-size:15px;font-weight:600;color:#fff;border:none;}
@@ -112,8 +131,9 @@
   <div class="row">
     <select id="cat"></select>
     <div class="mode" id="mode">
-      <button data-m="srs" class="on">复习模式</button>
-      <button data-m="all">通览模式</button>
+      <button data-m="srs" class="on">复习</button>
+      <button data-m="all">通览</button>
+      <button data-m="read">📖 阅读</button>
     </div>
   </div>
 
@@ -126,6 +146,7 @@
     <button class="link" onclick="resetAll()">♻️ 重置进度</button>
   </div>
 </div>
+<button class="totop" id="totop" title="回到顶部" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -408,7 +429,31 @@ function render(){
   `;
   document.getElementById("bar").style.width=(pos/queue.length*100)+"%";
 }
-function flip(){turned=!turned;render();}
+function flip(){if(mode==="read")return;turned=!turned;render();}
+
+/* ============ 阅读模式：像PDF一样平铺全部内容 ============ */
+function renderReading(){
+  const idx=CARDS.map((_,i)=>i).filter(inCat);
+  const catName=cat==="全部"?"全部分类":cat;
+  document.getElementById("stage").innerHTML=`<div class="reader">
+    <div class="readhead">📖 阅读模式 · ${catName} · 共 ${idx.length} 题（题目 → 答案 → 口诀 → 解析，全部展开）</div>
+    ${idx.map(i=>{const c=CARDS[i];return `
+      <section class="ritem" id="card-${c.n}">
+        <span class="rcat">${c.cat}</span>
+        <h3><span class="rnum">#${c.n}</span>${c.q}</h3>
+        <div class="ra">${c.a}</div>
+        ${c.mn?`<div class="mn">💡 口诀：${c.mn}</div>`:''}
+        ${c.x?`<div class="rexph">📖 解析</div><div class="expbody">${c.x}</div>`:''}
+      </section>`}).join("")}
+  </div>`;
+  window.scrollTo({top:0});
+}
+// 统一刷新：阅读模式走平铺，其余走刷卡
+function refresh(){
+  const bar=document.querySelector(".bar");
+  if(mode==="read"){bar.style.display="none";renderReading();}
+  else{bar.style.display="";buildQueue();render();}
+}
 
 function updateStats(){
   let due=0,nw=0,mastered=0;
@@ -474,11 +519,17 @@ function renderResults(){
 function hideResults(){$results.classList.remove("show");matches=[];selIdx=-1;}
 function jumpTo(i){
   if(i<0||i>=matches.length)return;
-  queue=matches.slice();      // 队列设为全部命中项，可逐张翻看
-  pos=i;turned=false;
-  render();
+  const n=CARDS[matches[i]].n;
   hideResults();$search.blur();
-  toast(`已定位 · 共${queue.length}张命中卡片`);
+  if(mode==="read"){            // 阅读模式：滚动定位并高亮
+    const el=document.getElementById("card-"+n);
+    if(el){el.scrollIntoView({behavior:"smooth",block:"start"});
+      el.classList.remove("flash");void el.offsetWidth;el.classList.add("flash");}
+    toast(`已定位到 #${n}`);
+  }else{                        // 刷卡模式：队列设为全部命中项，可逐张翻看
+    queue=matches.slice();pos=i;turned=false;render();
+    toast(`已定位 · 共${queue.length}张命中卡片`);
+  }
 }
 
 $search.addEventListener("input",runSearch);
@@ -498,17 +549,22 @@ function scrollSel(){const el=$results.querySelector(".ri.sel");if(el)el.scrollI
 document.addEventListener("click",e=>{if(!e.target.closest(".searchbox"))hideResults();});
 
 /* events */
-document.getElementById("cat").addEventListener("change",e=>{cat=e.target.value;buildQueue();render();});
+document.getElementById("cat").addEventListener("change",e=>{cat=e.target.value;refresh();});
 document.querySelectorAll("#mode button").forEach(b=>b.addEventListener("click",()=>{
   document.querySelectorAll("#mode button").forEach(x=>x.classList.remove("on"));
-  b.classList.add("on");mode=b.dataset.m;buildQueue();render();
+  b.classList.add("on");mode=b.dataset.m;refresh();
 }));
 document.addEventListener("keydown",e=>{
   // 在搜索框（或任意输入框）内打字时，不触发翻面/评分
   const t=e.target.tagName;
   if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
+  if(mode==="read")return;     // 阅读模式：保留空格/回车的原生滚动，不拦截
   if(e.key===" "||e.key==="Enter"){e.preventDefault();flip();}
   if(turned){if(e.key==="1")grade(0);if(e.key==="2")grade(1);if(e.key==="3")grade(2);}
+});
+// 阅读模式下显示"回到顶部"
+window.addEventListener("scroll",()=>{
+  document.getElementById("totop").classList.toggle("show",mode==="read"&&window.scrollY>400);
 });
 
 buildCatOptions();buildQueue();render();updateStats();
