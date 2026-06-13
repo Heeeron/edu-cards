@@ -135,6 +135,10 @@
     </div>
   </div>
 
+  <div class="row">
+    <select id="topic" title="跳到具体题目"></select>
+  </div>
+
   <div class="bar"><i id="bar"></i></div>
 
   <div id="stage"></div>
@@ -359,10 +363,37 @@ function save(){localStorage.setItem(KEY,JSON.stringify(state));}
 let mode="srs", cat="全部", queue=[], pos=0, turned=false;
 
 function buildCatOptions(){
-  const cats=["全部",...new Set(CARDS.map(c=>c.cat))];
-  document.getElementById("cat").innerHTML=cats.map(c=>`<option>${c}</option>`).join("");
+  const counts={};
+  CARDS.forEach(c=>{counts[c.cat]=(counts[c.cat]||0)+1;});
+  const cats=[...new Set(CARDS.map(c=>c.cat))];
+  let html=`<option value="全部">全部（${CARDS.length}）</option>`;
+  html+=cats.map(c=>`<option value="${c}">${c}（${counts[c]}）</option>`).join("");
+  document.getElementById("cat").innerHTML=html;
 }
 function inCat(i){return cat==="全部"||CARDS[i].cat===cat;}
+
+// 二级下拉：当前一级分类下的全部题目，选中即跳转
+function buildTopicOptions(){
+  const idx=CARDS.map((_,i)=>i).filter(inCat);
+  let html=`<option value="">— 跳到题目（共 ${idx.length} 题）—</option>`;
+  html+=idx.map(i=>{const c=CARDS[i];
+    return `<option value="${c.n}">#${c.n} ${c.q.replace(/^简述/,"")}</option>`;}).join("");
+  document.getElementById("topic").innerHTML=html;
+}
+function jumpToN(n){
+  const cardIdx=CARDS.findIndex(c=>c.n===n);
+  if(cardIdx<0)return;
+  if(mode==="read"){
+    const el=document.getElementById("card-"+n);
+    if(el){el.scrollIntoView({behavior:"smooth",block:"start"});
+      el.classList.remove("flash");void el.offsetWidth;el.classList.add("flash");}
+  }else{
+    const list=CARDS.map((_,i)=>i).filter(inCat);
+    const p=list.indexOf(cardIdx);
+    queue=list;pos=p<0?0:p;turned=false;render();
+  }
+  toast(`已跳到 #${n}`);
+}
 
 function buildQueue(){
   let idx=CARDS.map((_,i)=>i).filter(inCat);
@@ -547,7 +578,11 @@ function scrollSel(){const el=$results.querySelector(".ri.sel");if(el)el.scrollI
 document.addEventListener("click",e=>{if(!e.target.closest(".searchbox"))hideResults();});
 
 /* events */
-document.getElementById("cat").addEventListener("change",e=>{cat=e.target.value;refresh();});
+document.getElementById("cat").addEventListener("change",e=>{cat=e.target.value;buildTopicOptions();refresh();});
+document.getElementById("topic").addEventListener("change",e=>{
+  const n=+e.target.value;e.target.selectedIndex=0;
+  if(n)jumpToN(n);
+});
 document.querySelectorAll("#mode button").forEach(b=>b.addEventListener("click",()=>{
   document.querySelectorAll("#mode button").forEach(x=>x.classList.remove("on"));
   b.classList.add("on");mode=b.dataset.m;refresh();
@@ -565,7 +600,7 @@ window.addEventListener("scroll",()=>{
   document.getElementById("totop").classList.toggle("show",mode==="read"&&window.scrollY>400);
 });
 
-buildCatOptions();buildQueue();render();updateStats();
+buildCatOptions();buildTopicOptions();buildQueue();render();updateStats();
 </script>
 </body>
 </html>
